@@ -30,8 +30,6 @@ mpCode: fzwy
 
 业务失败且带 token 时：若 `desc` 含 `userId` 且含 `Missing` → 清缓存并跳登录。
 
-**无 `x-sign`。**
-
 ---
 
 ## 2. 登录协议
