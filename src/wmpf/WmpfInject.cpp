@@ -95,6 +95,8 @@ QString modulePathOf(quint32 pid) {
     return out;
 }
 
+QStringList loadedHookDllNames(quint32 pid);  // defined below
+
 // Write FzwyHook.cfg (the hook DLL reads it from its own directory).
 // hooks= lists only hooks actually enabled: cdpFilter is disabled wholesale in the DLL
 // due to the CET shadow stack (see FzwyHook.cpp header); including it would just earn a
@@ -180,15 +182,33 @@ int injectDll(quint32 pid, const QString &dllPath, QString *err) {
     VirtualFreeEx(h, remote, 0, MEM_RELEASE);
     CloseHandle(h);
 
-    // GetExitCodeThread returns only the low 32 bits of the HMODULE; on x64 a module
-    // base whose low 32 bits happen to be 0 (extremely rare) would be misreported as a
-    // load failure. LoadLibraryW offers no better cross-process return channel, so this
-    // false-positive rate is accepted.
     if (exitCode == 0) {
-        if (err)
+        // GetExitCodeThread returns only the low 32 bits of the HMODULE; a module base
+        // whose low half is 0 would be misreported as failure. Verify against the
+        // target's module list before believing it.
+        if (loadedHookDllNames(pid).contains(QFileInfo(dllPath).fileName(),
+                                             Qt::CaseInsensitive))
+            return 0;
+        // Genuine load failure. Classify it: a data-file load in our own process checks
+        // the DLL file itself (no DllMain runs, so no side effects).
+        //   - local load fails   -> the file is corrupt or was quarantined by AV
+        //   - local load succeeds -> the target process (i.e. its AV/EDR) refused the load
+        const HMODULE probeDll = LoadLibraryExW(
+            reinterpret_cast<const wchar_t *>(dllPath.utf16()), nullptr,
+            LOAD_LIBRARY_AS_DATAFILE);
+        if (!err)
+            return 6;
+        if (probeDll) {
+            FreeLibrary(probeDll);
             *err = QStringLiteral(
-                "目标进程 LoadLibrary 返回 0。常见原因：DLL 与目标位数不符、路径不可达，"
-                "或 DLL 仍依赖未静态链接的运行库（libstdc++-6.dll / libgcc_s_seh-1.dll）");
+                "hook DLL 已被复制但目标微信进程拒绝加载——几乎总是 360/电脑管家/Windows "
+                "Defender 等防护软件拦截了向微信注入未签名 DLL。请把本工具所在目录加入"
+                "防护软件白名单（或暂时退出防护软件）后重新打开本工具");
+        } else {
+            *err = QStringLiteral(
+                "hook DLL 文件损坏或已被防护软件隔离（本机加载自检失败 %1）。"
+                "请关闭防护软件后重新解压分发包").arg(winErr());
+        }
         return 6;
     }
     return 0;

@@ -72,15 +72,22 @@ void Session::startWatch() {
     m_watch = std::thread([this, alive, lg] {
         // The watchdog thread doesn't need a Qt event loop: ensureHooked is all Win32 calls.
         // Can't use QTimer — Backend tasks run in a QThread without exec().
+        QString lastMsg;
         for (;;) {
             if (!alive->load())
                 return;
             const HookInstallResult hr = ensureHooked();
             m_hookOk = hr.ok;
+            // Log only on state change: a persistent failure retried every 2s would
+            // otherwise spam the GUI log with identical lines.
+            QString msg;
             if (hr.ok && !hr.alreadyHooked)
-                lg(QStringLiteral("[hook 看护] %1").arg(hr.message));
+                msg = QStringLiteral("[hook 看护] %1").arg(hr.message);
             else if (!hr.ok)
-                lg(QStringLiteral("[hook 看护] 失败：%1").arg(hr.message));
+                msg = QStringLiteral("[hook 看护] 失败：%1").arg(hr.message);
+            if (!msg.isEmpty() && msg != lastMsg)
+                lg(msg);
+            lastMsg = msg;
             for (int i = 0; i < 20; ++i) {
                 if (!alive->load())
                     return;
