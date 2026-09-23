@@ -482,16 +482,17 @@ HookInstallResult installHook(const std::function<void(const QString &)> &log) {
     // Command all non-current-version old variants to unhook.
     // They share the same target entry bytes; if even one old version is still hooked
     // (or still holds restore capability), it will wipe the new version's hook.
+    int oldCount = 0;
     for (const QString &n : loadedNames) {
         if (n.compare(dllName, Qt::CaseInsensitive) == 0)
             continue;
         if (triggerUnhook(pid, n)) {
-            lg(QStringLiteral("已命令旧版 %1 在线卸载").arg(n));
+            ++oldCount;
             QThread::msleep(300);
-        } else {
-            lg(QStringLiteral("旧版 %1 无卸载通路（更早的版本），忽略").arg(n));
         }
     }
+    if (oldCount > 0)
+        lg(QStringLiteral("已清理 %1 个旧版 hook").arg(oldCount));
     if (!loadedNames.isEmpty() && !wantLoaded)
         QThread::msleep(300);
     if (!loadedNames.isEmpty())
@@ -500,7 +501,6 @@ HookInstallResult installHook(const std::function<void(const QString &)> &log) {
     if (hooked) {
         if (dllLoaded) {
             // Our own hook: have the DLL re-install itself (idempotent; will detect E9 and skip)
-            lg(QStringLiteral("目标入口已是 E9，且本工具 DLL 已在目标进程里 → 触发重新安装"));
             r.alreadyHooked = true;
         } else {
             // Leftover from another tool (frida) that was taskkill /F'd before the agent could restore
