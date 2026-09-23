@@ -1,0 +1,31 @@
+# Build output
+build/
+dist/
+
+# Runtime config (contains protocol secrets — do NOT commit)
+config.json
+
+# Runtime state files (contain tokens, user IDs — do NOT commit)
+auto_task_state.json
+all_types_log.json
+close_trace.log
+FzwyHook.log
+FzwyHook.cfg
+
+# Content-hash DLL variants created at runtime
+FzwyHook_*.dll
+
+# AI tool artifacts
+.workbuddy-ai/
+
+# IDE / editor
+.vscode/
+.idea/
+*.user
+*.user.*
+*.swp
+*~
+
+# OS
+Thumbs.db
+.DS_Store

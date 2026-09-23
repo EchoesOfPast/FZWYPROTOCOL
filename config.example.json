@@ -1,0 +1,9 @@
+{
+    "aesKey": "REPLACE_WITH_AES_KEY",
+    "aesIv": "REPLACE_WITH_AES_IV",
+    "serverPubKey": "REPLACE_WITH_SERVER_PUBKEY_HEX",
+    "appId": "REPLACE_WITH_WXAPPID",
+    "mpCode": "REPLACE_WITH_MPCODE",
+    "baseUrl": "https://your-api-server.example.com/",
+    "mpVersion": 0
+}

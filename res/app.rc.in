@@ -1,0 +1,37 @@
+// Resource script: exe icon + file properties
+// Uses configure_file to inject absolute paths, avoiding windres working-directory issues.
+//
+// Note: VERSIONINFO must use numeric ID `1 VERSIONINFO`.
+// windres does not predefine VS_VERSION_INFO macro like MS rc does (that's in winver.h),
+// writing `VS_VERSION_INFO VERSIONINFO` would be treated as "a resource named VS_VERSION_INFO",
+// while Windows version API only looks for RT_VERSION/ID=1, resulting in empty properties page.
+1 ICON "@APP_ICON_WIN@"
+
+1 VERSIONINFO
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName", "fzwy"
+            VALUE "FileDescription", "学习任务助手"
+            VALUE "FileVersion", "1.2.0.0"
+            VALUE "InternalName", "FzwyTask"
+            VALUE "LegalCopyright", "仅供个人学习使用"
+            VALUE "OriginalFilename", "FzwyTask.exe"
+            VALUE "ProductName", "学习任务助手"
+            VALUE "ProductVersion", "1.2.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
