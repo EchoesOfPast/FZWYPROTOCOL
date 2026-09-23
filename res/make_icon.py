@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""纯 Python 生成应用图标 app.ico（不依赖 Pillow）。
+"""Generate app.ico with pure Python (no Pillow).
 
-设计：圆角方形徽标 + 蓝色竖向渐变 + 顶部高光 + 白色对勾。
-先用解析式覆盖率在 3 倍超采样下渲染 256x256 主图，再盒式降采样出其余尺寸。
+Design: dark slate rounded-square badge + thin hexagon ring + solid inner triangle.
+Rendered analytically at 3x supersampling, then box-downsampled to each icon size.
 """
 from __future__ import annotations
 
@@ -12,11 +12,14 @@ import struct
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.ico")
 SIZES = [256, 128, 64, 48, 32, 24, 16]
-SS = 3  # 超采样倍数
+SS = 3  # supersampling factor
 
-# 渐变端点（上→下）
-TOP = (0x5B, 0x97, 0xFF)
-BOT = (0x25, 0x5F, 0xE0)
+# Badge gradient (top -> bottom): near-black slate
+TOP = (0x1E, 0x29, 0x3B)
+BOT = (0x0B, 0x11, 0x20)
+# Hexagon ring: muted slate; inner triangle: deep teal
+RING = (0x64, 0x74, 0x8B)
+MARK = (0x0D, 0x94, 0x88)
 
 
 def clamp01(v: float) -> float:
@@ -40,21 +43,52 @@ def dist_to_seg(px, py, ax, ay, bx, by) -> float:
     return math.hypot(px - (ax + t * vx), py - (ay + t * vy))
 
 
-def render_master(n: int = 256) -> bytearray:
-    """返回 n*n 的 RGBA 字节数组。
+def polygon_pts(radius: float, n: int, rot_deg: float) -> list:
+    return [(radius * math.cos(math.radians(rot_deg + 360.0 * i / n)),
+             radius * math.sin(math.radians(rot_deg + 360.0 * i / n)))
+            for i in range(n)]
 
-    注意：所有距离都在「归一化坐标」下计算（整图跨 -1..1，即 2 个单位），
-    因此抗锯齿宽度必须乘上 P = 每单位对应的采样数，否则边缘会糊掉整张图。
+
+def sd_polygon(px: float, py: float, pts: list) -> float:
+    """Signed distance to a convex polygon (negative inside)."""
+    inside = True
+    max_edge = -1e9
+    min_seg = 1e9
+    m = len(pts)
+    for i in range(m):
+        ax, ay = pts[i]
+        bx, by = pts[(i + 1) % m]
+        ex, ey = bx - ax, by - ay
+        # outward normal (polygon wound counter-clockwise in screen space with y up)
+        nx, ny = ey, -ex
+        d = ((px - ax) * nx + (py - ay) * ny) / math.hypot(nx, ny)
+        if d > 0.0:
+            inside = False
+        if d > max_edge:
+            max_edge = d
+        s = dist_to_seg(px, py, ax, ay, bx, by)
+        if s < min_seg:
+            min_seg = s
+    return max_edge if inside else min_seg
+
+
+def render_master(n: int = 256) -> bytearray:
+    """Return an n*n RGBA byte array.
+
+    All distances are computed in normalized coordinates (the image spans -1..1,
+    i.e. 2 units), so the antialiasing width must be multiplied by P = samples
+    per unit, otherwise edges blur across the whole image.
     """
     m = n * SS
-    P = m / 2.0  # 每个归一化单位对应多少采样点
+    P = m / 2.0
     buf = bytearray(n * n * 4)
     acc = [0.0] * (n * n * 4)
-    # 徽标几何（归一化坐标）
+    # Badge geometry (normalized coordinates)
     hw, hh, rad = 0.455, 0.455, 0.225
-    # 对勾折线（必须留在 ±0.455 的圆角矩形内，且留出描边宽度）
-    pts = [(-0.260, 0.015), (-0.070, 0.205), (0.280, -0.205)]
-    stroke = 0.115
+    # Mark: pointy-top hexagon ring + inner triangle
+    hex_pts = polygon_pts(0.30, 6, 90.0)
+    tri_pts = polygon_pts(0.155, 3, -90.0)
+    ring_w = 0.042
     for sy in range(m):
         py = (sy + 0.5) / m * 2.0 - 1.0
         row = sy // SS
@@ -65,24 +99,25 @@ def render_master(n: int = 256) -> bytearray:
             cov = clamp01(0.5 - sd_round_rect(px, py, hw, hh, rad) * P)
             if cov <= 0.0:
                 continue
-            # 渐变
+            # gradient
             t = (py + 1.0) * 0.5
             r = TOP[0] + (BOT[0] - TOP[0]) * t
             g = TOP[1] + (BOT[1] - TOP[1]) * t
             b = TOP[2] + (BOT[2] - TOP[2]) * t
-            # 顶部高光
-            hi = clamp01((0.20 - py) / 0.85) * 0.18
-            r += (255 - r) * hi
-            g += (255 - g) * hi
-            b += (255 - b) * hi
-            # 对勾
-            d = min(dist_to_seg(px, py, pts[0][0], pts[0][1], pts[1][0], pts[1][1]),
-                    dist_to_seg(px, py, pts[1][0], pts[1][1], pts[2][0], pts[2][1]))
-            k = clamp01(0.5 + (stroke - d) * P)
+            # hexagon ring
+            d_hex = sd_polygon(px, py, hex_pts)
+            k = clamp01(0.5 + (ring_w - abs(d_hex)) * P)
             if k > 0.0:
-                r += (255.0 - r) * k
-                g += (255.0 - g) * k
-                b += (255.0 - b) * k
+                r += (RING[0] - r) * k
+                g += (RING[1] - g) * k
+                b += (RING[2] - b) * k
+            # inner triangle
+            d_tri = sd_polygon(px, py, tri_pts)
+            k = clamp01(0.5 - d_tri * P)
+            if k > 0.0:
+                r += (MARK[0] - r) * k
+                g += (MARK[1] - g) * k
+                b += (MARK[2] - b) * k
             acc[idx + 0] += r * cov
             acc[idx + 1] += g * cov
             acc[idx + 2] += b * cov
@@ -92,7 +127,7 @@ def render_master(n: int = 256) -> bytearray:
         j = i * 4
         a = acc[j + 3]
         if a > 0.0:
-            # 边缘像素按覆盖率归一化，避免出现暗边
+            # normalize edge pixels by coverage to avoid dark fringes
             buf[j] = min(255, int(acc[j + 0] * 255.0 / a + 0.5))
             buf[j + 1] = min(255, int(acc[j + 1] * 255.0 / a + 0.5))
             buf[j + 2] = min(255, int(acc[j + 2] * 255.0 / a + 0.5))
@@ -128,7 +163,7 @@ def downsample(master: list, src: int, dst: int) -> bytearray:
 
 
 def bmp_payload(rgba: bytearray, n: int) -> bytes:
-    """ICO 里的 BMP：BITMAPINFOHEADER + 自下而上的 BGRA + AND 掩码。"""
+    """BMP inside an ICO: BITMAPINFOHEADER + bottom-up BGRA + AND mask."""
     hdr = struct.pack("<IiiHHIIiiII", 40, n, n * 2, 1, 32, 0, n * n * 4, 0, 0, 0, 0)
     xor = bytearray()
     for y in range(n - 1, -1, -1):
