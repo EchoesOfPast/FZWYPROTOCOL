@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 # Release pipeline injects -DFZWY_VERSION=<tag>; bump the default for local dev builds.
-set(FZWY_VERSION "1.3.0" CACHE STRING "App version")
+set(FZWY_VERSION "1.4.0" CACHE STRING "App version")
 project(FzwyTask VERSION ${FZWY_VERSION} LANGUAGES CXX RC)
 string(REPLACE "." "," FZWY_VERSION_COMMA "${FZWY_VERSION}")
 
