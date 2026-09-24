@@ -148,7 +148,13 @@ QJsonObject FzwyApi::httpJson(const QString &method, const QString &path, const 
 }
 
 bool FzwyApi::isAuthError(const QJsonObject &resp) {
-    return resp["__http_error__"].toInt() == 401;
+    if (resp["__http_error__"].toInt() == 401)
+        return true;
+    // Auth failure also arrives as HTTP 200 with a business desc like
+    // "Missing request header 'userId'..." — the mini program treats that
+    // exact pattern as "clear cache and re-login" too (see PROTOCOL.md section 1).
+    const QString desc = resp["desc"].toString();
+    return desc.contains(QLatin1String("Missing")) && desc.contains(QLatin1String("userId"));
 }
 
 QJsonObject FzwyApi::get(const QString &path, const QUrlQuery &query) {

@@ -350,9 +350,23 @@ bool Backend::runTasks() {
     }
 
     lg(QStringLiteral("Keys ready (built-in)"));
+    auto cancelFn = [this] { return m_cancel.load(); };
     Tasks tasks(log);
-    tasks.runAll();
-    return true;
+    tasks.runAll(10, 5, 5, 5, cancelFn);
+
+    // Token rejected mid-run: re-login silently and retry once. The login flow
+    // itself prompts and waits for the mini-program if it is not attached yet.
+    if (!tasks.authFailedFlag())
+        return true;
+    if (m_cancel.load())
+        return false;
+    lg(QStringLiteral("登录态已失效，自动重新登录（若提示请打开小程序）…"));
+    if (!getToken())
+        return false;
+    lg(QStringLiteral("已重新登录，续跑任务…"));
+    Tasks retry(log);
+    retry.runAll(10, 5, 5, 5, cancelFn);
+    return !retry.authFailedFlag();
 }
 
 Backend::Status Backend::probeStatus() {

@@ -303,6 +303,8 @@ void Tasks::doWords(int n) {
     step(QStringLiteral("word/get/card"), r["success"].toBool(),
          QStringLiteral("n=%1").arg(words.size()));
     for (int i = 0; i < qMin<int>(n, words.size()); ++i) {
+        if (cancelled())
+            return;
         QJsonObject w = words[i].toObject();
         qint64 t0 = nowSec();
         QJsonObject item{
@@ -353,6 +355,8 @@ void Tasks::doSpellFill(const QString &teamId, int n) {
         step(QStringLiteral("spell/get"), r["success"].toBool(),
              QStringLiteral("n=%1").arg(wl.size()));
         for (int i = 0; i < qMin<int>(n, wl.size()); ++i) {
+            if (cancelled())
+                return;
             QJsonObject w = wl[i].toObject();
             QString name = js(w, "name");
             QJsonValue cid = jv(w, "recordId").isUndefined() ? jv(w, "wordId") : jv(w, "recordId");
@@ -389,6 +393,8 @@ void Tasks::doSpellFill(const QString &teamId, int n) {
         step(QStringLiteral("fill/get"), r["success"].toBool(),
              QStringLiteral("n=%1").arg(wl.size()));
         for (int i = 0; i < qMin<int>(n, wl.size()); ++i) {
+            if (cancelled())
+                return;
             QJsonObject w = wl[i].toObject();
             QJsonValue cid = jv(w, "cardId");
             if (cid.isUndefined())
@@ -433,6 +439,8 @@ void Tasks::doListen(const QString &packageId, int n) {
     step(QStringLiteral("listening/get/card"), r["success"].toBool(),
          QStringLiteral("n=%1 desc=%2").arg(cards.size()).arg(js(r, "desc")));
     for (int i = 0; i < qMin<int>(n, cards.size()); ++i) {
+        if (cancelled())
+            return;
         QJsonObject card = cards[i].toObject();
         qint64 t0 = nowSec();
         QJsonValue cid = jv(card, "cardId");
@@ -595,7 +603,9 @@ void Tasks::doFinish() {
     }
 }
 
-void Tasks::runAll(int words, int spell, int fill, int listen) {
+void Tasks::runAll(int words, int spell, int fill, int listen,
+                   const std::function<bool()> &cancelReq) {
+    cancelRequested = cancelReq;
     log(QStringLiteral("======== 全题型自动完成 ========"));
     if (!cryptoOk) {
         log(QStringLiteral("密钥初始化失败，请检查 config.json，已中止本次任务"));
@@ -615,7 +625,9 @@ void Tasks::runAll(int words, int spell, int fill, int listen) {
         q.addQueryItem("nickName", "");
         QJsonObject r = api.get(QStringLiteral("capp/businessserver/mp/user/signin/new/1"), q);
         if (FzwyApi::isAuthError(r)) {
-            log(QStringLiteral("登录态已失效（401），请重新获取 Token，已中止本次任务"));
+            // Caller decides whether to re-login and retry (authFailedFlag)
+            authFailed = true;
+            log(QStringLiteral("登录态已失效（401）"));
             return;
         }
         QString uo = js(r["data"].toObject(), "uo");
@@ -629,22 +641,37 @@ void Tasks::runAll(int words, int spell, int fill, int listen) {
     {
         QJsonObject r = api.postV2(QStringLiteral("capp/businessserver/mp/user/signin/v2"), {});
         if (FzwyApi::isAuthError(r)) {
-            log(QStringLiteral("登录态已失效（401），请重新获取 Token，已中止本次任务"));
+            authFailed = true;
+            log(QStringLiteral("登录态已失效（401）"));
             return;
         }
         step(QStringLiteral("signin/v2"), r["success"].toBool());
+    }
+    if (cancelled()) {
+        log(QStringLiteral("已取消。"));
+        return;
     }
 
     QJsonObject info = discover();
     QJsonArray teamIds = info["team_ids"].toArray();
     QString teamId = !teamIds.isEmpty() ? teamIds.first().toVariant().toString() : pkg;
 
-    doWords(words);
-    doSpellFill(teamId, spell);
-    doListen(pkg, listen);
-    doReading(pkg);
-    doExams();
-    doFinish();
+    if (!cancelled())
+        doWords(words);
+    if (!cancelled())
+        doSpellFill(teamId, spell);
+    if (!cancelled())
+        doListen(pkg, listen);
+    if (!cancelled())
+        doReading(pkg);
+    if (!cancelled())
+        doExams();
+    if (!cancelled())
+        doFinish();
+    if (cancelled()) {
+        log(QStringLiteral("已取消，任务提前结束。"));
+        return;
+    }
 
     QJsonObject tasks2;
     {

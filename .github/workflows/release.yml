@@ -24,8 +24,9 @@ jobs:
         shell: bash
         run: |
           QTBIN=$(dirname "$(which qmake)")
-          QTROOT=$(cd "$QTBIN/../.." && pwd)
+          QTROOT=$(cd "$QTBIN/../../.." && pwd)
           MINGW_BIN=$(ls -d "$QTROOT"/Tools/mingw*/bin | head -1)
+          echo "QTBIN=$QTBIN"
           echo "QTROOT=$QTROOT"
           echo "MINGW_BIN=$MINGW_BIN"
           "$MINGW_BIN/g++.exe" --version | head -1
@@ -37,7 +38,7 @@ jobs:
           # The runner's own MinGW (C:/mingw64, gcc 15) is ABI-incompatible with
           # Qt's mingw_64 build; Qt's bundled 13.1 must be used explicitly.
           QTBIN=$(dirname "$(which qmake)")
-          QTROOT=$(cd "$QTBIN/../.." && pwd)
+          QTROOT=$(cd "$QTBIN/../../.." && pwd)
           MINGW_BIN=$(ls -d "$QTROOT"/Tools/mingw*/bin | head -1)
           cmake -G "MinGW Makefiles" \
             -DCMAKE_PREFIX_PATH="$QTBIN/.." \

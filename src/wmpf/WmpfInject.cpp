@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QDateTime>
 #include <QThread>
 
 #include "WmpfOffsets.h"
@@ -32,7 +33,23 @@ struct ProcInfo {
     quint32 ppid = 0;
 };
 
-QString winErr() { return QStringLiteral("Win32 错误 %1").arg(GetLastError()); }
+QString winErr(DWORD code = GetLastError()) {
+    wchar_t text[512] = {};
+    const DWORD n = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                   nullptr, code, 0, text,
+                                   static_cast<DWORD>(sizeof(text) / sizeof(text[0])), nullptr);
+    QString message = n ? QString::fromWCharArray(text).trimmed()
+                         : QStringLiteral("未知错误");
+    return QStringLiteral("Win32 错误 %1：%2").arg(code).arg(message);
+}
+
+bool processExists(quint32 pid) {
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h)
+        return false;
+    CloseHandle(h);
+    return true;
+}
 
 // Must match the injector's max possible displacement: the hook DLL's displacement
 // buffer is 32 bytes (kMaxDisplaced in FzwyHook.cpp; the probe buffer is 32 too), so
@@ -172,12 +189,25 @@ int injectDll(quint32 pid, const QString &dllPath, QString *err) {
         // few bytes instead.
         CloseHandle(th);
         CloseHandle(h);
-        if (err)
-            *err = QStringLiteral("等待 LoadLibrary 线程超时");
+        if (err) {
+            if (w == WAIT_FAILED)
+                *err = QStringLiteral("等待 LoadLibrary 线程失败（%1）").arg(winErr());
+            else
+                *err = QStringLiteral("等待 LoadLibrary 线程超时（目标进程仍存活：%1）")
+                           .arg(processExists(pid) ? QStringLiteral("是") : QStringLiteral("否"));
+        }
         return 5;
     }
     DWORD exitCode = 0;
-    GetExitCodeThread(th, &exitCode);
+    if (!GetExitCodeThread(th, &exitCode)) {
+        const QString e = winErr();
+        CloseHandle(th);
+        VirtualFreeEx(h, remote, 0, MEM_RELEASE);
+        CloseHandle(h);
+        if (err)
+            *err = QStringLiteral("读取 LoadLibrary 线程结果失败（%1）").arg(e);
+        return 6;
+    }
     CloseHandle(th);
     VirtualFreeEx(h, remote, 0, MEM_RELEASE);
     CloseHandle(h);
@@ -189,25 +219,35 @@ int injectDll(quint32 pid, const QString &dllPath, QString *err) {
         if (loadedHookDllNames(pid).contains(QFileInfo(dllPath).fileName(),
                                              Qt::CaseInsensitive))
             return 0;
-        // Genuine load failure. Classify it: a data-file load in our own process checks
-        // the DLL file itself (no DllMain runs, so no side effects).
-        //   - local load fails   -> the file is corrupt or was quarantined by AV
-        //   - local load succeeds -> the target process (i.e. its AV/EDR) refused the load
+        // A data-file load only checks that the local file can be opened; it does not
+        // execute DllMain or prove that normal code loading will succeed in the target.
+        // Keep the diagnosis explicit instead of attributing every failure to AV/EDR.
         const HMODULE probeDll = LoadLibraryExW(
             reinterpret_cast<const wchar_t *>(dllPath.utf16()), nullptr,
             LOAD_LIBRARY_AS_DATAFILE);
-        if (!err)
-            return 6;
-        if (probeDll) {
+        const DWORD localError = probeDll ? ERROR_SUCCESS : GetLastError();
+        if (probeDll)
             FreeLibrary(probeDll);
-            *err = QStringLiteral(
-                "hook DLL 已被复制但目标微信进程拒绝加载——几乎总是 360/电脑管家/Windows "
-                "Defender 等防护软件拦截了向微信注入未签名 DLL。请把本工具所在目录加入"
-                "防护软件白名单（或暂时退出防护软件）后重新打开本工具");
-        } else {
-            *err = QStringLiteral(
-                "hook DLL 文件损坏或已被防护软件隔离（本机加载自检失败 %1）。"
-                "请关闭防护软件后重新解压分发包").arg(winErr());
+        const bool targetAlive = processExists(pid);
+        if (err) {
+            if (!targetAlive) {
+                *err = QStringLiteral(
+                    "目标进程 pid=%1 在 LoadLibrary 返回后已退出，无法判断 DLL 是否被加载；"
+                    "请重试并检查微信宿主进程是否发生轮换")
+                           .arg(pid);
+            } else if (!probeDll) {
+                *err = QStringLiteral(
+                    "远程 LoadLibrary 返回 0，且本机无法打开 hook DLL：%1；路径=%2")
+                           .arg(winErr(localError))
+                           .arg(dllPath);
+            } else {
+                *err = QStringLiteral(
+                    "远程 LoadLibrary 返回 0，但目标进程仍存活且 DLL 文件可在本机打开；"
+                    "可能原因包括目标进程加载策略、DLL 普通依赖/初始化失败、权限或安全软件拦截；"
+                    "当前无法从注入线程直接取得目标进程内部的真实 GetLastError；pid=%1，路径=%2")
+                           .arg(pid)
+                           .arg(dllPath);
+            }
         }
         return 6;
     }
@@ -387,15 +427,25 @@ QString hookLogTail(int lines) {
 HookInstallResult ensureHooked(const std::function<void(const QString &)> &log) {
     HookInstallResult r;
 #ifdef _WIN32
-    // Variant path is cached by content hash to avoid recomputing every round (requires reading the entire DLL)
+    // Cache the variant, but refresh when the source DLL changes or either file disappears.
+    // Without the source metadata check, a watchdog running across a rebuild could keep
+    // injecting an older hash-named copy indefinitely.
     static QString cachedVariant;
-    if (cachedVariant.isEmpty()) {
+    static qint64 cachedSourceSize = -1;
+    static QDateTime cachedSourceTime;
+    const QFileInfo sourceInfo(hookDllPath());
+    const bool sourceChanged = !sourceInfo.exists() ||
+                               sourceInfo.size() != cachedSourceSize ||
+                               sourceInfo.lastModified() != cachedSourceTime;
+    if (cachedVariant.isEmpty() || sourceChanged || !QFileInfo::exists(cachedVariant)) {
         QString err;
         cachedVariant = hookDllVariantPath(&err);
         if (cachedVariant.isEmpty()) {
             r.message = err;
             return r;
         }
+        cachedSourceSize = sourceInfo.size();
+        cachedSourceTime = sourceInfo.lastModified();
     }
     const QString want = QFileInfo(cachedVariant).fileName();
 
@@ -474,7 +524,8 @@ HookInstallResult installHook(const std::function<void(const QString &)> &log) {
         r.message = vers.isEmpty()
                         ? QStringLiteral("WMPF 版本 %1 没有内置偏移（内置偏移表为空，请检查资源是否打包）")
                               .arg(version)
-                        : QStringLiteral("WMPF 版本 %1 没有内置偏移（内置 %2–%3）")
+                        : QStringLiteral("当前微信的 WMPF 版本 %1 暂不支持（支持范围 %2–%3）。"
+                                         "请将微信回退到支持范围内的版本，或等待工具更新")
                               .arg(version)
                               .arg(vers.first())
                               .arg(vers.last());
@@ -496,6 +547,7 @@ HookInstallResult installHook(const std::function<void(const QString &)> &log) {
     }
 
     const QString dllName = QFileInfo(dll).fileName();
+    lg(QStringLiteral("hook DLL=%1（%2 字节）").arg(dll).arg(QFileInfo(dll).size()));
     const QStringList loadedNames = loadedHookDllNames(pid);
     const bool wantLoaded =
         loadedNames.contains(dllName, Qt::CaseInsensitive);
@@ -536,6 +588,7 @@ HookInstallResult installHook(const std::function<void(const QString &)> &log) {
 
     const QString dir = QFileInfo(dll).absolutePath();
     const QString cfg = dir + QStringLiteral("/FzwyHook.cfg");
+    lg(QStringLiteral("hook 配置=%1").arg(cfg));
     QString err;
     if (!writeConfig(cfg, module, off, &err)) {
         r.message = err;
