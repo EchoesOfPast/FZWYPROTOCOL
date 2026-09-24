@@ -8,8 +8,8 @@
 1 ICON "@APP_ICON_WIN@"
 
 1 VERSIONINFO
- FILEVERSION 1,2,0,0
- PRODUCTVERSION 1,2,0,0
+ FILEVERSION @FZWY_VERSION_COMMA@,0
+ PRODUCTVERSION @FZWY_VERSION_COMMA@,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -22,12 +22,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "fzwy"
             VALUE "FileDescription", "学习任务助手"
-            VALUE "FileVersion", "1.2.0.0"
+            VALUE "FileVersion", "@FZWY_VERSION@.0"
             VALUE "InternalName", "FzwyTask"
             VALUE "LegalCopyright", "仅供个人学习使用"
             VALUE "OriginalFilename", "FzwyTask.exe"
             VALUE "ProductName", "学习任务助手"
-            VALUE "ProductVersion", "1.2.0.0"
+            VALUE "ProductVersion", "@FZWY_VERSION@.0"
         END
     END
     BLOCK "VarFileInfo"

@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.3'
+          arch: win64_mingw
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          which g++ && g++ --version | head -1
+          which cmake && cmake --version | head -1
+          which qmake && qmake --version | tail -1
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -G "MinGW Makefiles" \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR" \
+            -DFZWY_VERSION="${GITHUB_REF_NAME#v}" \
+            -S . -B build
+
+      - name: Build + deploy
+        shell: bash
+        run: |
+          cmake --build build --config Release -j2
+          cmake --build build --target deploy
+
+      - name: Smoke self-check
+        shell: bash
+        run: |
+          cd build
+          out=$(./FzwyTask.exe --check || true)
+          echo "$out"
+          echo "$out" | grep -q "AES self-test: OK"
+          echo "$out" | grep -q "RSA self-test: OK"
+
+      - name: Package (inject runtime config)
+        shell: pwsh
+        env:
+          CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
+        run: |
+          $ErrorActionPreference = 'stop'
+          [IO.File]::WriteAllText("dist/FzwyTask/config.json", $env:CONFIG_JSON)
+          Compress-Archive -Path "dist/FzwyTask" -DestinationPath "FzwyTask-$env:GITHUB_REF_NAME-windows-x64.zip" -Force
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 学习任务助手 ${{ github.ref_name }}
+          generate_release_notes: true
+          files: FzwyTask-${{ github.ref_name }}-windows-x64.zip
