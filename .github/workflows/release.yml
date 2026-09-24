@@ -17,7 +17,7 @@ jobs:
         with:
           version: '6.7.3'
           arch: win64_mingw
-          modules: 'qtwebsockets qtsvg'
+          modules: 'qtwebsockets'
 
       - name: Show toolchain
         shell: bash
