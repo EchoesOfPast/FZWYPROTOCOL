@@ -13,7 +13,7 @@ cmake --build build --target deploy      :: 收集 Qt/MinGW 运行时到 dist/Fz
 ```
 
 - 依赖：Qt 6.7.3（win64_mingw）+ MinGW 13.1。Qt 是在线安装的，两者 ABI 必须匹配，混用别的 MinGW 会让 moc 起不来
-- exe 运行需要旁边的 `config.json`（协议密钥，不进仓库；仓库里只有 `config.example.json`）
+- 密钥两级兜底：`config.defaults.json`（本地 gitignored 文件，构建期编译进 exe，CI 从 CONFIG_JSON secret 生成）为内置默认；exe 旁的 `config.json` 按字段覆盖。两个文件都不进仓库，仓库里只有 `config.example.json`
 
 ## 发版
 

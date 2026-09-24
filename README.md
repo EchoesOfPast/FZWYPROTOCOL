@@ -30,7 +30,7 @@ cmake --build build --config Release -j8
 cmake --build build --target deploy
 ```
 
-运行需要 exe 旁的 `config.json`（参照 `config.example.json`），字段含义与提取方法见 PROTOCOL.md 第 3、9 节。
+运行需要协议密钥，提供方式二选一：把 `config.defaults.json`（同 `config.example.json` 格式）放在源码根目录再构建（编译进 exe）；或在 exe 旁放 `config.json`（按字段覆盖内置值）。字段含义与提取方法见 PROTOCOL.md 第 3、9 节。
 
 ## 目录结构
 
