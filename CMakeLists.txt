@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 # Release pipeline injects -DFZWY_VERSION=<tag>; bump the default for local dev builds.
-set(FZWY_VERSION "1.2.1" CACHE STRING "App version")
+set(FZWY_VERSION "1.2.2" CACHE STRING "App version")
 project(FzwyTask VERSION ${FZWY_VERSION} LANGUAGES CXX RC)
 string(REPLACE "." "," FZWY_VERSION_COMMA "${FZWY_VERSION}")
 
@@ -120,6 +120,31 @@ target_link_libraries(FzwyTask PRIVATE
     bcrypt
     ncrypt
 )
+
+# Optional embedded default config: config.defaults.json is a local gitignored file
+# (CI writes it from the CONFIG_JSON secret). Values land in the exe as compile-time
+# fallbacks; config.json next to the exe still overrides them.
+set(_cfg_defaults "${CMAKE_CURRENT_SOURCE_DIR}/config.defaults.json")
+if(EXISTS "${_cfg_defaults}")
+    file(READ "${_cfg_defaults}" _cfg_json)
+    string(JSON _aesKey GET "${_cfg_json}" aesKey)
+    string(JSON _aesIv GET "${_cfg_json}" aesIv)
+    string(JSON _spk GET "${_cfg_json}" serverPubKey)
+    string(JSON _appId GET "${_cfg_json}" appId)
+    string(JSON _mpCode GET "${_cfg_json}" mpCode)
+    string(JSON _baseUrl GET "${_cfg_json}" baseUrl)
+    string(JSON _mpVer GET "${_cfg_json}" mpVersion)
+    target_compile_definitions(FzwyTask PRIVATE
+        FZWY_CFG_AESKEY="${_aesKey}"
+        FZWY_CFG_AESIV="${_aesIv}"
+        FZWY_CFG_SERVERPUBKEY="${_spk}"
+        FZWY_CFG_APPID="${_appId}"
+        FZWY_CFG_MPCODE="${_mpCode}"
+        FZWY_CFG_BASEURL="${_baseUrl}"
+        FZWY_CFG_MPVERSION=${_mpVer}
+    )
+    message(STATUS "Embedded default config from config.defaults.json")
+endif()
 
 # Deploy: Qt6 runtime + MinGW runtime.
 # MinGW's libgcc/libstdc++/libwinpthread are not in Qt's bin directory,

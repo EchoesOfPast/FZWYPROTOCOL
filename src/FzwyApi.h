@@ -15,6 +15,10 @@ public:
     QString token;
     QString osValue;
     qlonglong userId = 0;
+    // Sticky flag: set by any request whose response looks like an auth failure
+    // (HTTP 401, or the server's "Missing ... userId" business desc). Lets the
+    // task layer detect mid-run expiry without checking every single response.
+    bool authFailureSeen = false;
 
     bool initCrypto();
 

@@ -303,7 +303,7 @@ void Tasks::doWords(int n) {
     step(QStringLiteral("word/get/card"), r["success"].toBool(),
          QStringLiteral("n=%1").arg(words.size()));
     for (int i = 0; i < qMin<int>(n, words.size()); ++i) {
-        if (cancelled())
+        if (cancelled() || api.authFailureSeen)
             return;
         QJsonObject w = words[i].toObject();
         qint64 t0 = nowSec();
@@ -355,7 +355,7 @@ void Tasks::doSpellFill(const QString &teamId, int n) {
         step(QStringLiteral("spell/get"), r["success"].toBool(),
              QStringLiteral("n=%1").arg(wl.size()));
         for (int i = 0; i < qMin<int>(n, wl.size()); ++i) {
-            if (cancelled())
+            if (cancelled() || api.authFailureSeen)
                 return;
             QJsonObject w = wl[i].toObject();
             QString name = js(w, "name");
@@ -393,7 +393,7 @@ void Tasks::doSpellFill(const QString &teamId, int n) {
         step(QStringLiteral("fill/get"), r["success"].toBool(),
              QStringLiteral("n=%1").arg(wl.size()));
         for (int i = 0; i < qMin<int>(n, wl.size()); ++i) {
-            if (cancelled())
+            if (cancelled() || api.authFailureSeen)
                 return;
             QJsonObject w = wl[i].toObject();
             QJsonValue cid = jv(w, "cardId");
@@ -439,7 +439,7 @@ void Tasks::doListen(const QString &packageId, int n) {
     step(QStringLiteral("listening/get/card"), r["success"].toBool(),
          QStringLiteral("n=%1 desc=%2").arg(cards.size()).arg(js(r, "desc")));
     for (int i = 0; i < qMin<int>(n, cards.size()); ++i) {
-        if (cancelled())
+        if (cancelled() || api.authFailureSeen)
             return;
         QJsonObject card = cards[i].toObject();
         qint64 t0 = nowSec();
@@ -615,10 +615,8 @@ void Tasks::runAll(int words, int spell, int fill, int listen,
         log(QStringLiteral("未能获取 userId（登录态可能无效），已中止本次任务"));
         return;
     }
-    if (pkg.isEmpty()) {
-        log(QStringLiteral("无可用词包（packageUuid 为空），已中止本次任务"));
-        return;
-    }
+    // Auth check comes BEFORE the pkg check: with an expired token the constructor's
+    // package probe already failed, and aborting here would bypass the re-login retry.
     {
         QUrlQuery q;
         q.addQueryItem("imageUrl", "");
@@ -647,6 +645,10 @@ void Tasks::runAll(int words, int spell, int fill, int listen,
         }
         step(QStringLiteral("signin/v2"), r["success"].toBool());
     }
+    if (pkg.isEmpty()) {
+        log(QStringLiteral("无可用词包（packageUuid 为空），已中止本次任务"));
+        return;
+    }
     if (cancelled()) {
         log(QStringLiteral("已取消。"));
         return;
@@ -656,18 +658,26 @@ void Tasks::runAll(int words, int spell, int fill, int listen,
     QJsonArray teamIds = info["team_ids"].toArray();
     QString teamId = !teamIds.isEmpty() ? teamIds.first().toVariant().toString() : pkg;
 
-    if (!cancelled())
+    // aborted() = user cancel or token rejected mid-run (matches the official
+    // client, which checks that desc pattern on every response)
+    auto aborted = [this] { return cancelled() || api.authFailureSeen; };
+    if (!aborted())
         doWords(words);
-    if (!cancelled())
+    if (!aborted())
         doSpellFill(teamId, spell);
-    if (!cancelled())
+    if (!aborted())
         doListen(pkg, listen);
-    if (!cancelled())
+    if (!aborted())
         doReading(pkg);
-    if (!cancelled())
+    if (!aborted())
         doExams();
-    if (!cancelled())
+    if (!aborted())
         doFinish();
+    if (api.authFailureSeen) {
+        authFailed = true;
+        log(QStringLiteral("登录态在任务中途失效（401）"));
+        return;
+    }
     if (cancelled()) {
         log(QStringLiteral("已取消，任务提前结束。"));
         return;

@@ -135,6 +135,8 @@ QJsonObject FzwyApi::httpJson(const QString &method, const QString &path, const 
     if (status != 200) {
         if (err)
             *err = QStringLiteral("HTTP %1").arg(status);
+        if (status == 401)
+            authFailureSeen = true;
         return QJsonObject{{"__http_error__", status}};
     }
     QJsonParseError pe{};
@@ -144,7 +146,10 @@ QJsonObject FzwyApi::httpJson(const QString &method, const QString &path, const 
             *err = QStringLiteral("Response is not JSON");
         return {};
     }
-    return doc.object();
+    QJsonObject obj = doc.object();
+    if (isAuthError(obj))
+        authFailureSeen = true;
+    return obj;
 }
 
 bool FzwyApi::isAuthError(const QJsonObject &resp) {

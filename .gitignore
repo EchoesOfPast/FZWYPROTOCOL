@@ -33,3 +33,6 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+
+# Embedded default config (local only, contains secrets)
+config.defaults.json

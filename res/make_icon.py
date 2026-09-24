@@ -138,27 +138,35 @@ def render_master(n: int = 256) -> bytearray:
 def downsample(master: list, src: int, dst: int) -> bytearray:
     if dst == src:
         return bytearray(master)
-    f = src // dst
+    # Area-weighted box resample: an integer factor (src // dst) silently drops the
+    # right/bottom remainder when src is not divisible (e.g. 256 -> 48/24).
     out = bytearray(dst * dst * 4)
+    scale = src / dst
     for y in range(dst):
+        y0, y1 = y * scale, (y + 1) * scale
         for x in range(dst):
-            a = r = g = b = 0
-            for dy in range(f):
-                base = ((y * f + dy) * src + x * f) * 4
-                for dx in range(f):
-                    j = base + dx * 4
-                    a += master[j + 3]
-                    r += master[j + 0] * master[j + 3]
-                    g += master[j + 1] * master[j + 3]
-                    b += master[j + 2] * master[j + 3]
+            x0, x1 = x * scale, (x + 1) * scale
+            a = r = g = b = 0.0
+            for sy in range(int(y0), min(int(y1) + 1, src)):
+                wy = min(y1, sy + 1) - max(y0, sy)
+                if wy <= 0:
+                    continue
+                for sx in range(int(x0), min(int(x1) + 1, src)):
+                    wx = min(x1, sx + 1) - max(x0, sx)
+                    if wx <= 0:
+                        continue
+                    w = wx * wy
+                    j = (sy * src + sx) * 4
+                    a += master[j + 3] * w
+                    r += master[j + 0] * master[j + 3] * w
+                    g += master[j + 1] * master[j + 3] * w
+                    b += master[j + 2] * master[j + 3] * w
             k = (y * dst + x) * 4
-            n = f * f
-            aa = a // n
-            out[k + 3] = aa
+            out[k + 3] = min(255, int(a / (scale * scale) + 0.5))
             if a:
-                out[k + 0] = min(255, r // a)
-                out[k + 1] = min(255, g // a)
-                out[k + 2] = min(255, b // a)
+                out[k + 0] = min(255, int(r / a + 0.5))
+                out[k + 1] = min(255, int(g / a + 0.5))
+                out[k + 2] = min(255, int(b / a + 0.5))
     return out
 
 

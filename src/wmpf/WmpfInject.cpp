@@ -9,6 +9,8 @@
 #include <QDateTime>
 #include <QThread>
 
+#include <mutex>
+
 #include "WmpfOffsets.h"
 #include "WmpfProbe.h"
 
@@ -424,7 +426,13 @@ QString hookLogTail(int lines) {
     return rows.mid(qMax(0, rows.size() - lines)).join(QLatin1Char('\n'));
 }
 
+// Serialize all install/ensure paths: the watchdog thread (2s tick) and the worker
+// thread (each task's ensure()) can otherwise double-enter installHook — racing the
+// static variant cache (UB) and the shared manual-reset ready event (false timeout).
+static std::recursive_mutex g_installMutex;
+
 HookInstallResult ensureHooked(const std::function<void(const QString &)> &log) {
+    std::lock_guard<std::recursive_mutex> lk(g_installMutex);
     HookInstallResult r;
 #ifdef _WIN32
     // Cache the variant, but refresh when the source DLL changes or either file disappears.
@@ -486,6 +494,8 @@ HookInstallResult ensureHooked(const std::function<void(const QString &)> &log) 
 }
 
 HookInstallResult installHook(const std::function<void(const QString &)> &log) {
+    // Same lock as ensureHooked (recursive: it calls us) — covers direct CLI callers too.
+    std::lock_guard<std::recursive_mutex> lk(g_installMutex);
     const auto lg = [&log](const QString &m) {
         if (log)
             log(m);

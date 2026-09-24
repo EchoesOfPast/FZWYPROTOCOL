@@ -20,6 +20,13 @@ jobs:
           modules: 'qtwebsockets'
           tools: 'tools_mingw1310'
 
+      - name: Write embedded default config
+        shell: pwsh
+        env:
+          CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
+        run: |
+          [IO.File]::WriteAllText("config.defaults.json", $env:CONFIG_JSON)
+
       - name: Show toolchain
         shell: bash
         run: |

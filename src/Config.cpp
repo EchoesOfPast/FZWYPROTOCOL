@@ -35,6 +35,49 @@ AppConfig AppConfig::loadFrom(const QString &path) {
     return cfg;
 }
 
+// Embedded default config (optional): CMake injects these from config.defaults.json,
+// a local gitignored file (CI writes it from a secret). A real config.json next to the
+// exe still overrides field by field; a missing config.json is only an error when no
+// embedded defaults got compiled in.
+#ifndef FZWY_CFG_AESKEY
+#define FZWY_CFG_AESKEY ""
+#endif
+#ifndef FZWY_CFG_AESIV
+#define FZWY_CFG_AESIV ""
+#endif
+#ifndef FZWY_CFG_SERVERPUBKEY
+#define FZWY_CFG_SERVERPUBKEY ""
+#endif
+#ifndef FZWY_CFG_APPID
+#define FZWY_CFG_APPID ""
+#endif
+#ifndef FZWY_CFG_MPCODE
+#define FZWY_CFG_MPCODE ""
+#endif
+#ifndef FZWY_CFG_BASEURL
+#define FZWY_CFG_BASEURL ""
+#endif
+#ifndef FZWY_CFG_MPVERSION
+#define FZWY_CFG_MPVERSION 0
+#endif
+
 AppConfig AppConfig::load() {
-    return loadFrom(QCoreApplication::applicationDirPath() + QStringLiteral("/config.json"));
+    AppConfig cfg = loadFrom(QCoreApplication::applicationDirPath() + QStringLiteral("/config.json"));
+    if (cfg.aesKey.isEmpty())
+        cfg.aesKey = QStringLiteral(FZWY_CFG_AESKEY);
+    if (cfg.aesIv.isEmpty())
+        cfg.aesIv = QStringLiteral(FZWY_CFG_AESIV);
+    if (cfg.serverPubKey.isEmpty())
+        cfg.serverPubKey = QStringLiteral(FZWY_CFG_SERVERPUBKEY);
+    if (cfg.appId.isEmpty())
+        cfg.appId = QStringLiteral(FZWY_CFG_APPID);
+    if (cfg.mpCode.isEmpty())
+        cfg.mpCode = QStringLiteral(FZWY_CFG_MPCODE);
+    if (cfg.baseUrl.isEmpty())
+        cfg.baseUrl = QStringLiteral(FZWY_CFG_BASEURL);
+    if (cfg.mpVersion == 0)
+        cfg.mpVersion = FZWY_CFG_MPVERSION;
+    if (!cfg.aesKey.isEmpty() && !cfg.serverPubKey.isEmpty())
+        cfg.loadError.clear();
+    return cfg;
 }
