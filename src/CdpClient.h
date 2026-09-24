@@ -39,4 +39,4 @@ enum class EvalError {
 };
 
 QJsonValue evalAppService(const QString &expr, bool awaitPromise, int timeoutMs, QString *err,
-                          EvalError *code);
+                          EvalError *code, const QString &pageUrlPattern = {});

@@ -35,6 +35,10 @@ cmake --build build --target deploy
 ## 目录结构
 
 ```
+src/studio/    WmpfStudio：通用小程序调试台（JS 控制台 + Storage 导出，孵化版）
+```
+
+```
 src/            界面、协议、调试通道实现
   wmpf/         调试通道（hook DLL、注入、偏移表、WARemoteDebug 协议翻译）
 res/            图标、版本资源、WMPF 偏移表（按微信版本）

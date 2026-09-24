@@ -70,6 +70,24 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_link_options(-s)
 endif()
 
+# WMPF channel sources, shared by FzwyTask and WmpfStudio.
+set(WMPF_SOURCES
+    src/wmpf/x64len.h
+    src/wmpf/x64len.cpp
+    src/wmpf/WmpfOffsets.h
+    src/wmpf/WmpfOffsets.cpp
+    src/wmpf/WmpfProbe.h
+    src/wmpf/WmpfProbe.cpp
+    src/wmpf/WmpfInject.h
+    src/wmpf/WmpfInject.cpp
+    src/wmpf/WarRemoteDebug.h
+    src/wmpf/WarRemoteDebug.cpp
+    src/wmpf/WmpfChannel.h
+    src/wmpf/WmpfChannel.cpp
+    src/wmpf/WmpfSession.h
+    src/wmpf/WmpfSession.cpp
+)
+
 add_executable(FzwyTask WIN32
     src/main.cpp
     src/Config.h
@@ -89,20 +107,8 @@ add_executable(FzwyTask WIN32
     src/Tasks.cpp
     src/StateStore.h
     src/StateStore.cpp
-    src/wmpf/x64len.h
-    src/wmpf/x64len.cpp
-    src/wmpf/WmpfOffsets.h
-    src/wmpf/WmpfOffsets.cpp
-    src/wmpf/WmpfProbe.h
-    src/wmpf/WmpfProbe.cpp
-    src/wmpf/WmpfInject.h
-    src/wmpf/WmpfInject.cpp
-    src/wmpf/WarRemoteDebug.h
-    src/wmpf/WarRemoteDebug.cpp
-    src/wmpf/WmpfChannel.h
-    src/wmpf/WmpfChannel.cpp
-    src/wmpf/WmpfSession.h
-    src/wmpf/WmpfSession.cpp
+    src/JobThread.h
+    ${WMPF_SOURCES}
     res/app.qrc
     ${CMAKE_CURRENT_BINARY_DIR}/wmpf_offsets.qrc
     ${APP_RC}
@@ -120,6 +126,29 @@ target_link_libraries(FzwyTask PRIVATE
     Qt6::WebSockets
     bcrypt
     ncrypt
+)
+
+# WmpfStudio: generic mini-program debug console (JS eval + storage dump).
+add_executable(WmpfStudio WIN32
+    src/studio/main.cpp
+    src/studio/StudioWindow.h
+    src/studio/StudioWindow.cpp
+    src/CdpClient.h
+    src/CdpClient.cpp
+    src/Config.h
+    src/Config.cpp
+    src/JobThread.h
+    ${WMPF_SOURCES}
+)
+add_dependencies(WmpfStudio FzwyHook)
+set_target_properties(WmpfStudio PROPERTIES
+    OUTPUT_NAME "WmpfStudio"
+    WIN32_EXECUTABLE TRUE
+)
+target_link_libraries(WmpfStudio PRIVATE
+    Qt6::Widgets
+    Qt6::Network
+    Qt6::WebSockets
 )
 
 # Optional embedded default config: config.defaults.json is a local gitignored file
@@ -168,6 +197,8 @@ if(WINDEPLOYQT_EXE)
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                 "$<TARGET_FILE:FzwyTask>" "${DEPLOY_DIR}/FzwyTask.exe"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "$<TARGET_FILE:WmpfStudio>" "${DEPLOY_DIR}/WmpfStudio.exe"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                 "$<TARGET_FILE:FzwyHook>" "${DEPLOY_DIR}/FzwyHook.dll"
         COMMAND "${WINDEPLOYQT_EXE}"
                 --release --no-compiler-runtime --no-system-d3d-compiler
@@ -183,7 +214,7 @@ if(WINDEPLOYQT_EXE)
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/config.example.json"
                 "${DEPLOY_DIR}/config.example.json"
-        DEPENDS FzwyTask FzwyHook
+        DEPENDS FzwyTask FzwyHook WmpfStudio
         COMMENT "Deploy to ${DEPLOY_DIR} (Qt6 + MinGW runtime + hook DLL)"
         VERBATIM
     )

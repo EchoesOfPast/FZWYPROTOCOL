@@ -91,7 +91,7 @@ QJsonObject CdpClient::send(const QString &method, const QJsonObject &params,
 }
 
 QJsonValue evalAppService(const QString &expr, bool awaitPromise, int timeoutMs, QString *err,
-                          EvalError *code) {
+                          EvalError *code, const QString &pageUrlPattern) {
     if (err)
         err->clear();
     if (code)
@@ -105,11 +105,12 @@ QJsonValue evalAppService(const QString &expr, bool awaitPromise, int timeoutMs,
         return {};
     };
 
+    const QString pattern = pageUrlPattern.isEmpty() ? g_config.appId : pageUrlPattern;
     CdpClient cdp;
     if (!cdp.open()) {
         return fail(EvalError::NoChannel, QStringLiteral("Failed to connect to debug channel"));
     }
-    if (g_config.appId.isEmpty()) {
+    if (pattern.isEmpty()) {
         return fail(EvalError::NoPage,
                     QStringLiteral("appId is empty in config.json — cannot locate mini-program page"));
     }
@@ -122,16 +123,16 @@ QJsonValue evalAppService(const QString &expr, bool awaitPromise, int timeoutMs,
         if (o["type"].toString() == QLatin1String("page"))
             pageUrls << o["url"].toString().left(80);
         if (o["type"].toString() == QLatin1String("page") &&
-            o["url"].toString().contains(g_config.appId)) {
+            o["url"].toString().contains(pattern)) {
             page = o;
             break;
         }
     }
     if (page.isEmpty()) {
         return fail(EvalError::NoPage,
-                    QStringLiteral("Mini-program page not found (%1 pages, appId=%2). Pages: %3")
+                    QStringLiteral("Mini-program page not found (%1 pages, pattern=%2). Pages: %3")
                         .arg(targets.size())
-                        .arg(g_config.appId)
+                        .arg(pattern)
                         .arg(pageUrls.join(QStringLiteral(" | "))));
     }
     QJsonObject att = cdp.send(QStringLiteral("Target.attachToTarget"),
