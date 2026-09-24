@@ -50,3 +50,5 @@ res/            图标（make_icon.py 重新生成）、app.rc.in（版本资源
 - **401**：协议请求绝不能带 `userId` 头（带了必 401），用户身份服务端从 CToken 解析
 - **词包探测**：`package/show/v2` 返回的是词书组 id，要经 `card/package/set/query` 解析成卡包 id（packageUuid），直接用 groupId 必失败
 - **杀软**：360/电脑管家/Defender 会拦截向微信注入未签名 DLL（CreateRemoteThread+LoadLibrary），工具内已有分类诊断；分发上上策是代码签名
+- **CI**：windows-latest 自带的 MinGW（gcc 15）与 Qt 6.7.3 mingw_64 ABI 不兼容，必须用 Qt 自带的 13.1（工作流里从 qmake 反推 QTROOT 定位，别信预制 g++）；WebSockets 是 addon，`modules: 'qtwebsockets'` 必须显式装；`qtsvg` 已随主体安装不用再装
+- **401 有两种形态**：HTTP 401 和"HTTP 200 + desc 含 `Missing`/`userId`"（服务器对失效 token 的业务级报错，PROTOCOL.md §1），`FzwyApi::isAuthError` 两种都识别；Backend 命中后会自动重登续跑一次
