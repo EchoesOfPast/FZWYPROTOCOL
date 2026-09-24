@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QFile>
 #include <QJsonDocument>
+#include <QRandomGenerator>
 #include <QThread>
 #include <QUrlQuery>
 
@@ -12,6 +13,15 @@
 namespace {
 
 qint64 nowSec() { return QDateTime::currentSecsSinceEpoch(); }
+
+// Human-like jitter: fixed timings/counters (3s per word, 100ms uniform pace,
+// 100% identical runs) are trivially fingerprintable as automation. Durations
+// are seconds, sleeps are milliseconds.
+qint64 randRange(qint64 lo, qint64 hi) {
+    return lo + static_cast<qint64>(QRandomGenerator::global()->bounded(hi - lo + 1));
+}
+
+qint64 jitter(qint64 base, qint64 lo, qint64 hi) { return base + randRange(lo, hi); }
 
 QJsonValue jv(const QJsonObject &o, const char *k) { return o.value(QLatin1String(k)); }
 
@@ -111,7 +121,7 @@ QJsonObject Tasks::userRec(const QJsonValue &taskId, const QJsonValue &cardId,
         {"userId", static_cast<double>(uid)},
         {"userName", userName},
         {"taskId", taskId},
-        {"learnTime", static_cast<double>(learnTime)},
+        {"learnTime", static_cast<double>(learnTime > 0 ? learnTime : jitter(3, -1, 3))},
         {"taskName", ""},
         {"cardId", cardId},
         {"tleaderName", ""},
@@ -307,6 +317,7 @@ void Tasks::doWords(int n) {
             return;
         QJsonObject w = words[i].toObject();
         qint64 t0 = nowSec();
+        const qint64 dur = jitter(3, -1, 3);  // 2-6s per word
         QJsonObject item{
             {"userId", static_cast<double>(uid)},
             {"packageId", pkg},
@@ -314,12 +325,12 @@ void Tasks::doWords(int n) {
             {"word", jv(w, "name")},
             {"wordType", 1},
             {"clientStartTime", static_cast<double>(t0)},
-            {"clientEndTime", static_cast<double>(t0 + 3)},
+            {"clientEndTime", static_cast<double>(t0 + dur)},
             {"effective", true},
-            {"stayTime", 3},
-            {"flipCount", 2},
-            {"playCount", 1},
-            {"flipTimes", QStringLiteral("%1,%2").arg(t0).arg(t0 + 1)},
+            {"stayTime", dur},
+            {"flipCount", randRange(1, 4)},
+            {"playCount", randRange(0, 2)},
+            {"flipTimes", QStringLiteral("%1,%2").arg(t0).arg(t0 + randRange(1, 3))},
             {"testAnswer", 1},
             {"testAnswerCorrect", true},
         };
@@ -328,7 +339,7 @@ void Tasks::doWords(int n) {
             {"packageId", pkg},
             {"progress", i + 1},
             {"startTime", static_cast<double>(t0)},
-            {"endTime", static_cast<double>(t0 + 3)},
+            {"endTime", static_cast<double>(t0 + dur)},
             {"wordType", 1},
             {"cardId", jv(w, "wordId")},
             {"testChooseCorrect", true},
@@ -342,7 +353,7 @@ void Tasks::doWords(int n) {
         QJsonObject d = api.postV2(QStringLiteral("capp/wordserver/mp/word/run/v2"), sr);
         step(QStringLiteral("word[%1]%2").arg(i).arg(js(w, "name")),
              a["success"].toBool() && b["success"].toBool() && d["success"].toBool());
-        QThread::msleep(100);
+        QThread::msleep(static_cast<unsigned long>(randRange(150, 700)));
     }
 }
 
@@ -370,7 +381,7 @@ void Tasks::doSpellFill(const QString &teamId, int n) {
                 QStringLiteral("capp/datacenterserver/mp/record/spell_word"),
                 QJsonObject{{"groupId", js(w, "groupId")},
                             {"spellWord", name},
-                            {"stayTime", 3},
+                            {"stayTime", jitter(3, -1, 3)},
                             {"taskId", teamId},
                             {"teamId", ""},
                             {"userId", static_cast<double>(uid)},
@@ -412,7 +423,7 @@ void Tasks::doSpellFill(const QString &teamId, int n) {
                             {"selectOption", 1},
                             {"sentence", js(w, "sentence")},
                             {"sentenceId", js(w, "sentenceId")},
-                            {"stayTime", 3},
+                            {"stayTime", jitter(3, -1, 3)},
                             {"taskId", teamId},
                             {"teamId", ""},
                             {"userId", static_cast<double>(uid)},
@@ -448,15 +459,16 @@ void Tasks::doListen(const QString &packageId, int n) {
             cid = jv(card, "id");
         if (cid.isUndefined())
             cid = jv(card, "recordId");
+        const qint64 dur = jitter(5, -1, 4);  // 4-9s per card
         QJsonObject run{
             {"userId", static_cast<double>(uid)},
             {"packageId", packageId},
             {"cardId", cid},
             {"progress", i + 1},
             {"startTime", static_cast<double>(t0)},
-            {"endTime", static_cast<double>(t0 + 5)},
+            {"endTime", static_cast<double>(t0 + dur)},
             {"testChooseCorrect", true},
-            {"stayTime", 5},
+            {"stayTime", dur},
         };
         QJsonObject d = api.postV2(QStringLiteral("capp/businessserver/mp/listening/run/v2"), run);
         QJsonObject rec = api.postPlain(
@@ -464,7 +476,7 @@ void Tasks::doListen(const QString &packageId, int n) {
             QJsonObject{{"userId", static_cast<double>(uid)},
                         {"packageId", packageId},
                         {"cardId", cid},
-                        {"stayTime", 5},
+                        {"stayTime", dur},
                         {"progress", i + 1}});
         QJsonObject lcard = api.postPlain(
             QStringLiteral("capp/datacenterserver/mp/learn_card/record"),
@@ -477,11 +489,12 @@ void Tasks::doListen(const QString &packageId, int n) {
 
 void Tasks::doReading(const QString &packageId) {
     log(QStringLiteral("== 阅读 =="));
-    qint64 t0 = nowSec(), t1 = t0 + 8;
+    qint64 t0 = nowSec();
+    const qint64 dur = jitter(8, -2, 6);  // 6-14s
     QJsonObject run{
         {"userId", static_cast<double>(uid)},
         {"startTime", static_cast<double>(t0)},
-        {"endTime", static_cast<double>(t1)},
+        {"endTime", static_cast<double>(t0 + dur)},
         {"packageId", packageId},
         {"progress", 1},
     };
@@ -490,7 +503,7 @@ void Tasks::doReading(const QString &packageId) {
     QJsonObject e = api.postPlain(QStringLiteral("capp/datacenterserver/mp/reading/record"),
                                   QJsonObject{{"userId", static_cast<double>(uid)},
                                               {"packageId", packageId},
-                                              {"stayTime", 8},
+                                              {"stayTime", dur},
                                               {"progress", 1}});
     step(QStringLiteral("reading/record"), e["success"].toBool(), js(e, "desc"));
 }

@@ -1,7 +1,11 @@
 #include "Backend.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QThread>
 
 #include "CdpClient.h"
@@ -384,6 +388,60 @@ Backend::Status Backend::probeStatus() {
     st.uid = s["user_id"].toVariant().toLongLong();
     st.userName = s["user_name"].toString();
     return st;
+}
+
+namespace {
+
+// Runs schtasks and returns exit code + its output (GBK console on zh-CN Windows).
+int runSchtasks(const QStringList &args, QString *out) {
+    QProcess p;
+    p.setProcessChannelMode(QProcess::MergedChannels);
+    p.start(QStringLiteral("schtasks"), args);
+    p.waitForFinished(10000);
+    if (out)
+        *out = QString::fromLocal8Bit(p.readAll());
+    return p.exitCode();
+}
+
+const char *kTaskName = "FzwyDailyTask";
+
+}  // namespace
+
+bool Backend::scheduleInstalled(QString *timeOut) {
+    QString out;
+    if (runSchtasks({QStringLiteral("/Query"), QStringLiteral("/TN"),
+                     QString::fromLatin1(kTaskName), QStringLiteral("/FO"),
+                     QStringLiteral("/LIST")}, &out) != 0)
+        return false;
+    // Dig the start time out of the listing ("08:30:00"); format varies by locale.
+    const QRegularExpression re(QStringLiteral("(\\d{1,2}:\\d{2}):\\d{2}"));
+    const auto m = re.match(out);
+    if (timeOut)
+        *timeOut = m.hasMatch() ? m.captured(1) : QString();
+    return true;
+}
+
+bool Backend::installSchedule(const QString &hhmm, QString *err) {
+    const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    const QString tr = QStringLiteral("\"%1\" --run").arg(exe);
+    QString out;
+    const int rc = runSchtasks({QStringLiteral("/Create"), QStringLiteral("/TN"),
+                                QString::fromLatin1(kTaskName), QStringLiteral("/TR"), tr,
+                                QStringLiteral("/SC"), QStringLiteral("DAILY"),
+                                QStringLiteral("/ST"), hhmm, QStringLiteral("/F"),
+                                QStringLiteral("/IT")}, &out);
+    if (rc != 0 && err)
+        *err = out.trimmed();
+    return rc == 0;
+}
+
+bool Backend::removeSchedule(QString *err) {
+    QString out;
+    const int rc = runSchtasks({QStringLiteral("/Delete"), QStringLiteral("/TN"),
+                                QString::fromLatin1(kTaskName), QStringLiteral("/F")}, &out);
+    if (rc != 0 && err)
+        *err = out.trimmed();
+    return rc == 0;
 }
 
 bool Backend::restartChannel() {

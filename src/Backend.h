@@ -25,6 +25,15 @@ public:
     bool runTasks();  // false = cancelled or login failed
     Status probeStatus();
 
+    // Exports write CSV (UTF-8 BOM) + raw JSON next to the exe; false = no login or write error
+    bool exportWrongBook();
+    bool exportStudyReport();
+
+    // Windows Task Scheduler integration for daily unattended runs.
+    static bool scheduleInstalled(QString *timeOut);
+    static bool installSchedule(const QString &hhmm, QString *err);
+    static bool removeSchedule(QString *err);
+
     bool restartChannel();
 
     void stopChannel() {

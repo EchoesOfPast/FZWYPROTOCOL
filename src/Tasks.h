@@ -19,7 +19,7 @@ public:
 private:
     void step(const QString &name, bool ok, const QString &extra = {});
     QJsonObject userRec(const QJsonValue &taskId, const QJsonValue &cardId,
-                        const QString &cardType, qint64 learnTime = 3);
+                        const QString &cardType, qint64 learnTime = 0);  // <=0: random 2-6s
     bool cancelled() const { return cancelRequested && cancelRequested(); }
 
     QString fetchUserName();

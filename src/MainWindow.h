@@ -54,8 +54,11 @@ private:
     void buildUi();
     void applyStatus(const Backend::Status &st);
     void setBusy(bool busy, const QString &label = {});
-    void startJob(int kind);  // 0=get token, 1=run tasks, 2=refresh status, 3=restart channel
+    void startJob(int kind);  // 0=get token, 1=run tasks, 2=refresh status, 3=restart channel,
+                              // 4=export wrongbook, 5=export study report
     void setLoginChip(const Backend::Status &st);
+    void toggleSchedule();
+    void refreshScheduleButton();
 
     Backend m_backend;
     bool m_busy = false;
@@ -73,6 +76,9 @@ private:
     QPushButton *m_btnToken = nullptr;
     QPushButton *m_btnRefresh = nullptr;
     QPushButton *m_btnRestart = nullptr;
+    QPushButton *m_btnSchedule = nullptr;
+    QPushButton *m_btnExportWrong = nullptr;
+    QPushButton *m_btnExportReport = nullptr;
     QProgressBar *m_prog = nullptr;
     QTextEdit *m_log = nullptr;
 };

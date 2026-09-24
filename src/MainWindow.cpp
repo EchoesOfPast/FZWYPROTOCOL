@@ -7,7 +7,9 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QInputDialog>
 #include <QMessageBox>
+#include <QRegularExpression>
 #include <QShowEvent>
 #include <QVBoxLayout>
 
@@ -340,7 +342,35 @@ void MainWindow::buildUi() {
             startJob(3);
     });
     row->addWidget(m_btnRestart);
+
+    m_btnSchedule = new QPushButton;
+    m_btnSchedule->setObjectName(QStringLiteral("ghost"));
+    m_btnSchedule->setCursor(Qt::PointingHandCursor);
+    m_btnSchedule->setToolTip(QStringLiteral(
+        "通过 Windows 计划任务每天定时在后台自动完成任务。\n需要：电脑已登录微信、当天打开过一次小程序。"));
+    connect(m_btnSchedule, &QPushButton::clicked, this, [this] { toggleSchedule(); });
+    row->addWidget(m_btnSchedule);
+    refreshScheduleButton();
     lay->addLayout(row);
+
+    auto *row2 = new QHBoxLayout;
+    row2->setSpacing(10);
+    m_btnExportWrong = new QPushButton(QStringLiteral("导出错题"));
+    m_btnExportWrong->setObjectName(QStringLiteral("ghost"));
+    m_btnExportWrong->setCursor(Qt::PointingHandCursor);
+    m_btnExportWrong->setToolTip(QStringLiteral(
+        "导出错题本（单词/语法/听力）为 CSV 和 JSON，导出到程序所在目录。"));
+    connect(m_btnExportWrong, &QPushButton::clicked, this, [this] { startJob(4); });
+    row2->addWidget(m_btnExportWrong, 1);
+
+    m_btnExportReport = new QPushButton(QStringLiteral("导出学情"));
+    m_btnExportReport->setObjectName(QStringLiteral("ghost"));
+    m_btnExportReport->setCursor(Qt::PointingHandCursor);
+    m_btnExportReport->setToolTip(QStringLiteral(
+        "导出学情报告（账户/任务进度/小组学习记录）为 CSV 和 JSON，导出到程序所在目录。"));
+    connect(m_btnExportReport, &QPushButton::clicked, this, [this] { startJob(5); });
+    row2->addWidget(m_btnExportReport, 1);
+    lay->addLayout(row2);
 
     m_prog = new QProgressBar;
     m_prog->setRange(0, 0);
@@ -436,6 +466,9 @@ void MainWindow::setBusy(bool busy, const QString &label) {
     m_btnToken->setEnabled(!busy);
     m_btnRefresh->setEnabled(!busy);
     m_btnRestart->setEnabled(!busy);
+    m_btnSchedule->setEnabled(!busy);
+    m_btnExportWrong->setEnabled(!busy);
+    m_btnExportReport->setEnabled(!busy);
     m_prog->setVisible(busy);
     if (busy) {
         m_stage->setText(label.isEmpty() ? QStringLiteral("执行中…") : label);
@@ -454,6 +487,52 @@ void MainWindow::setLoginChip(const Backend::Status &st) {
         m_pill->setText(QStringLiteral("● 未登录"));
         m_pill->setStyleSheet(QStringLiteral("color:%1;").arg(QLatin1String(kInactive)));
     }
+}
+
+void MainWindow::refreshScheduleButton() {
+    if (!m_btnSchedule)
+        return;
+    QString time;
+    if (Backend::scheduleInstalled(&time))
+        m_btnSchedule->setText(QStringLiteral("每日自动 ✓ %1").arg(time));
+    else
+        m_btnSchedule->setText(QStringLiteral("每日自动"));
+}
+
+void MainWindow::toggleSchedule() {
+    QString time;
+    if (Backend::scheduleInstalled(&time)) {
+        if (!confirmDialog(this, QStringLiteral("取消每日自动"),
+                           QStringLiteral("已设置每天 %1 自动执行任务，确定要取消吗？").arg(time)))
+            return;
+        QString err;
+        if (!Backend::removeSchedule(&err))
+            appendLog(QStringLiteral("取消失败：%1").arg(err));
+        else
+            appendLog(QStringLiteral("已取消每日自动执行。"));
+        refreshScheduleButton();
+        return;
+    }
+    bool ok = false;
+    const QString timeIn = QInputDialog::getText(
+        this, QStringLiteral("每日自动执行"),
+        QStringLiteral("每天自动完成任务的时间（24 小时制 HH:mm）："),
+        QLineEdit::Normal, QStringLiteral("08:30"), &ok);
+    if (!ok)
+        return;
+    static const QRegularExpression hhmm(QStringLiteral("^([01]?\\d|2[0-3]):[0-5]\\d$"));
+    if (!hhmm.match(timeIn).hasMatch()) {
+        appendLog(QStringLiteral("时间格式不对：%1（应为 HH:mm，如 08:30）").arg(timeIn));
+        return;
+    }
+    QString err;
+    if (!Backend::installSchedule(timeIn, &err)) {
+        appendLog(QStringLiteral("设置失败：%1").arg(err));
+        return;
+    }
+    appendLog(QStringLiteral("已设置每天 %1 自动在后台完成任务。").arg(timeIn));
+    appendLog(QStringLiteral("注意：到点时需本机已登录微信且当天打开过一次小程序。"));
+    refreshScheduleButton();
 }
 
 void MainWindow::applyStatus(const Backend::Status &st) {
@@ -488,10 +567,13 @@ void MainWindow::startJob(int kind) {
     // A previous job may have been cancel-requested by a close attempt; reset the
     // flag before starting a new one. Safe: no worker is running at this point.
     m_backend.resetCancel();
-    const QString label = kind == 1 ? QStringLiteral("正在执行任务…")
-                                    : (kind == 0 ? QStringLiteral("正在获取 Token…")
-                                                 : (kind == 3 ? QStringLiteral("正在重启调试通道…")
-                                                              : QStringLiteral("正在检查状态…")));
+    const QString label =
+        kind == 1 ? QStringLiteral("正在执行任务…")
+                  : (kind == 0 ? QStringLiteral("正在获取 Token…")
+                               : (kind == 3 ? QStringLiteral("正在重启调试通道…")
+                                            : (kind == 4 ? QStringLiteral("正在导出错题本…")
+                                                         : (kind == 5 ? QStringLiteral("正在导出学情报告…")
+                                                                      : QStringLiteral("正在检查状态…")))));
     setBusy(true, label);
 
     auto alive = m_alive;
@@ -509,6 +591,8 @@ void MainWindow::startJob(int kind) {
         switch (kind) {
             case 1: m_backend.runTasks(); break;
             case 3: m_backend.restartChannel(); break;
+            case 4: m_backend.exportWrongBook(); break;
+            case 5: m_backend.exportStudyReport(); break;
             case 2: break;
             default: m_backend.getToken(); break;
         }

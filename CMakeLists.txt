@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 # Release pipeline injects -DFZWY_VERSION=<tag>; bump the default for local dev builds.
-set(FZWY_VERSION "1.2.2" CACHE STRING "App version")
+set(FZWY_VERSION "1.2.1" CACHE STRING "App version")
 project(FzwyTask VERSION ${FZWY_VERSION} LANGUAGES CXX RC)
 string(REPLACE "." "," FZWY_VERSION_COMMA "${FZWY_VERSION}")
 
@@ -78,6 +78,7 @@ add_executable(FzwyTask WIN32
     src/MainWindow.cpp
     src/Backend.h
     src/Backend.cpp
+    src/BackendExport.cpp
     src/CdpClient.h
     src/CdpClient.cpp
     src/Crypto.h
