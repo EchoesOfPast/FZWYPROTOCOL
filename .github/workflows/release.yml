@@ -23,10 +23,12 @@ jobs:
       - name: Show toolchain
         shell: bash
         run: |
-          QTROOT=$(cd "$Qt6_DIR/../../../.." && pwd)
-          CXX="$QTROOT/Tools/mingw1310_64/bin/g++.exe"
+          QTBIN=$(dirname "$(which qmake)")
+          QTROOT=$(cd "$QTBIN/../.." && pwd)
+          MINGW_BIN=$(ls -d "$QTROOT"/Tools/mingw*/bin | head -1)
           echo "QTROOT=$QTROOT"
-          "$CXX" --version | head -1
+          echo "MINGW_BIN=$MINGW_BIN"
+          "$MINGW_BIN/g++.exe" --version | head -1
           cmake --version | head -1
 
       - name: Configure
@@ -34,11 +36,13 @@ jobs:
         run: |
           # The runner's own MinGW (C:/mingw64, gcc 15) is ABI-incompatible with
           # Qt's mingw_64 build; Qt's bundled 13.1 must be used explicitly.
-          QTROOT=$(cd "$Qt6_DIR/../../../.." && pwd)
+          QTBIN=$(dirname "$(which qmake)")
+          QTROOT=$(cd "$QTBIN/../.." && pwd)
+          MINGW_BIN=$(ls -d "$QTROOT"/Tools/mingw*/bin | head -1)
           cmake -G "MinGW Makefiles" \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR" \
-            -DCMAKE_C_COMPILER="$QTROOT/Tools/mingw1310_64/bin/gcc.exe" \
-            -DCMAKE_CXX_COMPILER="$QTROOT/Tools/mingw1310_64/bin/g++.exe" \
+            -DCMAKE_PREFIX_PATH="$QTBIN/.." \
+            -DCMAKE_C_COMPILER="$MINGW_BIN/gcc.exe" \
+            -DCMAKE_CXX_COMPILER="$MINGW_BIN/g++.exe" \
             -DFZWY_VERSION="${GITHUB_REF_NAME#v}" \
             -S . -B build
 
